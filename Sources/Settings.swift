@@ -71,7 +71,8 @@ struct SettingsView: View {
                             HStack {
                                 Label("Needs Accessibility access", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 Spacer()
-                                Button("Open System Settings") { NSWorkspace.shared.open(Keys.accessibilitySettings) }
+                                // Prompting (not just opening the page) lists this exact build; ad-hoc builds each need their own entry.
+                                Button("Open System Settings") { keys.requestAccess() }
                             }
                         }
                     } else if turnedOff {
