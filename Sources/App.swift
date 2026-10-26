@@ -3,11 +3,11 @@ import ServiceManagement
 
 @main
 struct DisplayDialApp: App {
-    @State private var monitors = Monitor.all()
+    @State private var displays = Displays()
 
     var body: some Scene {
         MenuBarExtra("DisplayDial", systemImage: "sun.max.fill") {
-            Panel(monitors: monitors)
+            Panel(displays: displays)
         }
         .menuBarExtraStyle(.window)
     }
@@ -19,11 +19,62 @@ struct Profile: Codable, Identifiable {
     var values: [VCP: Int]
 }
 
+private func screen(_ id: CGDirectDisplayID) -> NSScreen? {
+    NSScreen.screens.first { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == id }
+}
+
+@Observable
+final class Displays {
+    var monitors: [Monitor] = []
+    var selectedID: CGDirectDisplayID?
+    var selected: Monitor? { monitors.first { $0.id == selectedID } ?? monitors.first }
+
+    // Rebuilt on every panel open and display change, so replugged monitors get fresh IOAVService
+    // handles; a Monitor object (and its cached capabilities) survives while its display stays online.
+    func rescan() {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16), count: UInt32 = 0
+        CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count)
+        let external = ids.prefix(Int(count)).filter { CGDisplayIsBuiltin($0) == 0 }
+        let services = DDC.externalDisplays()
+
+        var pairs: [(id: CGDirectDisplayID, service: Int, score: Int)] = []
+        for id in external {
+            for (i, s) in services.enumerated() {
+                let score = DDC.matchScore(s.attributes, vendor: CGDisplayVendorNumber(id), model: CGDisplayModelNumber(id),
+                                           serial: CGDisplaySerialNumber(id), name: screen(id)?.localizedName)
+                if score > 0 { pairs.append((id, i, score)) }
+            }
+        }
+        var match: [CGDirectDisplayID: Int] = [:]
+        for p in pairs.sorted(by: { $0.score > $1.score }) where match[p.id] == nil && !match.values.contains(p.service) {
+            match[p.id] = p.service
+        }
+        // A future registry layout without attributes still works for the common one-monitor case.
+        let unmatched = external.filter { match[$0] == nil }, spare = services.indices.filter { !match.values.contains($0) }
+        if unmatched.count == 1, spare.count == 1 { match[unmatched[0]] = spare[0] }
+
+        let baseNames = external.map { id in
+            screen(id)?.localizedName ?? match[id].flatMap { services[$0].attributes["ProductName"] as? String } ?? "Display"
+        }
+        monitors = zip(external, baseNames).enumerated().map { i, pair in
+            let (id, base) = pair
+            let shared = baseNames.filter { $0 == base }.count > 1
+            let name = shared ? "\(base) (\(baseNames[...i].filter { $0 == base }.count))" : base
+            let m = monitors.first { $0.id == id } ?? Monitor(id: id, legacyProfilesKey: shared ? nil : "profiles.\(base)")
+            m.name = name
+            m.ddc = match[id].map { services[$0].ddc }
+            return m
+        }
+    }
+}
+
 @Observable
 final class Monitor: Identifiable {
-    let id: Int
-    let name: String
-    private let ddc: DDC
+    let id: CGDirectDisplayID
+    var name = ""
+    var ddc: DDC?
+    // nil while the first read is in flight; false when the monitor never answered over DDC.
+    var responded: Bool?
     var values: [VCP: Int] = [:]
     var maxes: [VCP: Int] = [:]
     // nil until the monitor's capabilities string is read; then code -> allowed values.
@@ -31,35 +82,29 @@ final class Monitor: Identifiable {
     // Dell (and most monitors) lock brightness/contrast while macOS drives them in HDR.
     var hdr = false
     var hdrSupported = false
-    private var displayID: CGDirectDisplayID?
+    // Vendor-model-serial stays the same across reconnects and tells identical models apart.
+    private let profilesKey: String
     var profiles: [Profile] {
-        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(profiles), forKey: "profiles.\(name)") }
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(profiles), forKey: profilesKey) }
     }
     private var volumeBeforeMute = 30
 
-    init(id: Int, name: String, ddc: DDC) {
-        self.id = id; self.name = name; self.ddc = ddc
-        profiles = UserDefaults.standard.data(forKey: "profiles.\(name)").flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
-    }
-
-    static func all() -> [Monitor] {
-        let names = NSScreen.screens
-            .filter { CGDisplayIsBuiltin($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? 0) == 0 }
-            .map(\.localizedName)
-        // ponytail: names are paired with DDC services by order, exact for one external display;
-        // with several, match via the EDID serial in IORegistry if they come out swapped.
-        return DDC.externalDisplays().enumerated().map { i, ddc in
-            Monitor(id: i, name: names.count > i ? names[i] : "Display \(i + 1)", ddc: ddc)
-        }
+    init(id: CGDirectDisplayID, legacyProfilesKey: String?) {
+        self.id = id
+        profilesKey = "profiles.\(CGDisplayVendorNumber(id))-\(CGDisplayModelNumber(id))-\(CGDisplaySerialNumber(id))"
+        let defaults = UserDefaults.standard
+        let data = defaults.data(forKey: profilesKey) ?? legacyProfilesKey.flatMap { defaults.data(forKey: $0) }
+        profiles = data.flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
+        if defaults.data(forKey: profilesKey) == nil, let data { defaults.set(data, forKey: profilesKey) }
     }
 
     func refresh(after delay: Double = 0) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [self] in
-            let screen = NSScreen.screens.first { $0.localizedName == name }
-            displayID = screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-            hdrSupported = displayID.map(HDR.supported) ?? false
-            hdr = displayID.flatMap(HDR.enabled) ?? ((screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1)
-            let (ddc, known) = (ddc, supported)
+            hdrSupported = HDR.supported(id)
+            hdr = HDR.enabled(id) ?? ((screen(id)?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1)
+            guard let ddc else { responded = false; return }
+            if responded == false { responded = nil }
+            let known = supported
             Task.detached {
                 let caps = known ?? ddc.capabilities().map(DDC.supportedCodes).flatMap { $0.isEmpty ? nil : $0 }
                 var read: [VCP: (current: Int, max: Int)] = [:]
@@ -67,28 +112,30 @@ final class Monitor: Identifiable {
                     read[code] = ddc.read(code)
                 }
                 let (values, maxes) = (read.mapValues(\.current), read.mapValues(\.max))
-                await MainActor.run { self.supported = caps; self.values = values; self.maxes = maxes }
+                await MainActor.run {
+                    self.supported = caps; self.values = values; self.maxes = maxes
+                    self.responded = !values.isEmpty
+                }
             }
         }
     }
 
     func setHDR(_ on: Bool) {
-        guard let displayID else { return }
         hdr = on
-        Task.detached { HDR.set(displayID, on) }
+        Task.detached { [id] in HDR.set(id, on) }
         refresh(after: 3)
     }
 
     var canRestoreColor: Bool { supported.map { $0[0x08] != nil } ?? true }
 
     func restoreFactoryColor() {
-        ddc.restoreFactoryColor()
+        ddc?.restoreFactoryColor()
         refresh(after: 1.5)
     }
 
     func set(_ code: VCP, _ value: Int) {
         values[code] = value
-        ddc.set(code, value)
+        ddc?.set(code, value)
     }
 
     func binding(_ code: VCP) -> Binding<Double> {
@@ -143,16 +190,23 @@ final class Monitor: Identifiable {
 }
 
 struct Panel: View {
-    let monitors: [Monitor]
+    let displays: Displays
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if monitors.isEmpty {
-                Label("No external display with DDC found", systemImage: "display.trianglebadge.exclamationmark")
+            if displays.monitors.isEmpty {
+                Label("No external display connected", systemImage: "display.trianglebadge.exclamationmark")
                     .foregroundStyle(.secondary)
             }
-            ForEach(monitors) { MonitorSection(monitor: $0) }
+            if displays.monitors.count > 1 {
+                Picker("Monitor", selection: Binding(get: { displays.selected?.id ?? 0 }, set: { displays.selectedID = $0 })) {
+                    ForEach(displays.monitors) { Text($0.name).tag($0.id) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+            if let monitor = displays.selected { MonitorSection(monitor: monitor).id(monitor.id) }
             Divider()
             HStack {
                 Toggle("Launch at login", isOn: $launchAtLogin)
@@ -169,7 +223,13 @@ struct Panel: View {
         }
         .padding(16)
         .frame(width: 320)
-        .onAppear { monitors.forEach { $0.refresh() } }
+        .onAppear { displays.rescan(); displays.selected?.refresh() }
+        .onChange(of: displays.selected?.id) { displays.selected?.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            displays.rescan()
+            // A freshly plugged monitor's DDC service can register a moment after the screen appears.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { displays.rescan(); displays.selected?.refresh() }
+        }
     }
 }
 
@@ -190,33 +250,16 @@ struct MonitorSection: View {
             Label(monitor.name, systemImage: "display")
                 .font(.headline)
 
-            if monitor.values.isEmpty {
+            if monitor.ddc == nil || monitor.responded == false {
+                hdrRow
+                Label("No hardware controls on this connection", systemImage: "slash.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .help("This connection doesn't pass DDC/CI, e.g. DisplayLink adapters or the M1 Mac mini's HDMI port. USB-C or DisplayPort usually does.")
+            } else if monitor.values.isEmpty {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity)
             } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 15))
-                            .frame(width: 22)
-                            .foregroundStyle(.secondary)
-                        Text("HDR")
-                        Spacer()
-                        Text(monitor.hdr ? "On" : monitor.hdrSupported ? "Off" : "Not supported")
-                            .foregroundStyle(.secondary)
-                        if monitor.hdrSupported {
-                            Toggle("HDR", isOn: Binding(get: { monitor.hdr }, set: { monitor.setHDR($0) }))
-                                .toggleStyle(.switch)
-                                .controlSize(.mini)
-                                .labelsHidden()
-                        }
-                    }
-                    .font(.callout)
-                    if monitor.hdr {
-                        Text("The monitor locks brightness, contrast and colour presets while HDR is on.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                hdrRow
                 Group {
                     SliderRow(icon: "sun.max.fill", help: "Brightness", monitor: monitor, code: .brightness)
                     SliderRow(icon: "circle.lefthalf.filled", help: "Contrast", monitor: monitor, code: .contrast)
@@ -274,6 +317,33 @@ struct MonitorSection: View {
                     .padding(.top, 8)
                 }
                 .font(.callout)
+            }
+        }
+    }
+
+    private var hdrRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15))
+                    .frame(width: 22)
+                    .foregroundStyle(.secondary)
+                Text("HDR")
+                Spacer()
+                Text(monitor.hdr ? "On" : monitor.hdrSupported ? "Off" : "Not supported")
+                    .foregroundStyle(.secondary)
+                if monitor.hdrSupported {
+                    Toggle("HDR", isOn: Binding(get: { monitor.hdr }, set: { monitor.setHDR($0) }))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                }
+            }
+            .font(.callout)
+            if monitor.hdr {
+                Text("The monitor locks brightness, contrast and colour presets while HDR is on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

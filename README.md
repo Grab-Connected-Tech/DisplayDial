@@ -44,7 +44,8 @@ Also:
 - **Smooth slider dragging.** Only the latest value is sent to the monitor, so it never falls behind.
 - **HDR status and switch.** The HDR row shows *On*, *Off* or *Not supported*. When HDR is on, it reminds you that the monitor locks brightness and contrast.
 - **Launch at login** toggle.
-- **Multiple external displays.** Each monitor gets its own section.
+- **Multiple monitors.** With more than one external monitor, a picker at the top of the panel switches between them, so the panel stays the same size. Each monitor keeps its own HDR switch and saved profiles, even two of the same model.
+- **Plug and unplug freely.** Monitors connected or reconnected while the app is running show up automatically.
 
 ## Requirements
 
@@ -92,6 +93,8 @@ On Apple Silicon Macs, DisplayDial sends these commands with IOKit's `IOAVServic
 
 When the panel first opens, DisplayDial asks the monitor for its **capabilities string**. That's the monitor's own list of the VCP codes it supports and the values each one accepts; for example, the Dell S2725QC reports `60(1B 11 12)` for its three inputs and `DC(00 03 05)` for its three picture modes. The panel is built from that list, with the values labelled using the standard MCCS names.
 
+**Telling monitors apart.** Every external monitor has its own DDC service in macOS's I/O Registry, listed just after the display hardware entry that carries the monitor's vendor ID, product ID, serial number and name. DisplayDial pairs each service with the right screen by comparing those values with what macOS reports for each display, so controls never end up on the wrong monitor. Saved profiles are stored under the monitor's vendor, model and serial number, so two identical monitors each keep their own. The list is rebuilt whenever the panel opens or a monitor is connected or removed.
+
 Each write is sent twice, because monitors occasionally drop a DDC command. Reads are retried up to four times, and each reply's checksum is checked before it's used.
 
 ## Troubleshooting
@@ -102,11 +105,17 @@ Each write is sent twice, because monitors occasionally drop a DDC command. Read
 
 Also check the monitor's own menu for modes that lock brightness, such as *Dynamic Contrast*, *Smart HDR*, *ComfortView Plus* or *Eco*. Switching the preset mode to **Standard** usually unlocks it.
 
-### "No external display with DDC found"
+### "No hardware controls on this connection"
+
+The monitor is connected, but DisplayDial can't reach its settings over DDC/CI. The HDR switch still works, because that's a macOS setting.
 
 - DDC/CI may be switched off in the monitor's menu.
-- The connection may not carry DDC. See below.
-- The monitor may be the Mac's only display and asleep. Wake it and open the panel again.
+- The connection may not carry DDC, for example a DisplayLink dock or the M1 Mac mini's HDMI port. See below.
+- The monitor may be asleep. Wake it and open the panel again.
+
+### "No external display connected"
+
+macOS doesn't see an external monitor. Check the cable, and that the monitor is on the right input.
 
 ### Which connections work?
 
@@ -193,6 +202,12 @@ On Apple Silicon, DDC/CI is only reachable through private IOKit APIs, and the A
 ### How is it different from MonitorControl, Lunar or BetterDisplay?
 
 Those are full-featured, mature apps. DisplayDial does only hardware monitor controls in a single menu bar panel: two Swift files, no dependencies and under 300 KB. Choose DisplayDial if you want something small you can read end to end. Choose the others for keyboard brightness keys, automatic adjustment or virtual displays.
+
+### Does DisplayDial work with multiple monitors?
+
+Yes. Each external monitor connected over USB-C, Thunderbolt or DisplayPort gets its own controls. Use the picker at the top of the panel to switch between them. DisplayDial matches each monitor by its vendor, model and serial number, so two identical monitors are kept apart, each with its own HDR switch and saved profiles. A monitor on a connection without DDC/CI, such as a DisplayLink dock, is listed with a "No hardware controls on this connection" note, and only its HDR switch.
+
+So far DisplayDial has been tested on real hardware with one external monitor. Reports from multi-monitor setups are very welcome.
 
 ### Does DisplayDial collect any data?
 

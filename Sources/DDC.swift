@@ -23,18 +23,44 @@ final class DDC: @unchecked Sendable {
 
     private init(_ service: CFTypeRef) { self.service = service }
 
-    static func externalDisplays() -> [DDC] {
+    // Each external DCPAVServiceProxy, paired with the ProductAttributes of the framebuffer
+    // (AppleCLCD2 / IOMobileFramebufferShim) registered just before it in the IOService plane;
+    // MonitorControl's Arm64DDC relies on the same ordering.
+    static func externalDisplays() -> [(ddc: DDC, attributes: [String: Any])] {
+        let root = IORegistryGetRootEntry(kIOMainPortDefault)
+        defer { IOObjectRelease(root) }
         var iter = io_iterator_t()
-        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("DCPAVServiceProxy"), &iter) == KERN_SUCCESS else { return [] }
+        guard IORegistryEntryCreateIterator(root, kIOServicePlane, IOOptionBits(kIORegistryIterateRecursively), &iter) == KERN_SUCCESS else { return [] }
         defer { IOObjectRelease(iter) }
-        var result: [DDC] = []
+        var result: [(ddc: DDC, attributes: [String: Any])] = []
+        var attributes: [String: Any] = [:]
+        var name = [CChar](repeating: 0, count: 128)
         while case let entry = IOIteratorNext(iter), entry != 0 {
             defer { IOObjectRelease(entry) }
-            let loc = IORegistryEntryCreateCFProperty(entry, "Location" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String
-            guard loc == "External", let av = IOAVServiceCreateWithService(kCFAllocatorDefault, entry)?.takeRetainedValue() else { continue }
-            result.append(DDC(av))
+            func property(_ key: String) -> Any? {
+                IORegistryEntryCreateCFProperty(entry, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
+            }
+            guard IORegistryEntryGetName(entry, &name) == KERN_SUCCESS else { continue }
+            switch String(cString: name) {
+            case "AppleCLCD2", "IOMobileFramebufferShim":
+                attributes = (property("DisplayAttributes") as? [String: Any])?["ProductAttributes"] as? [String: Any] ?? [:]
+            case "DCPAVServiceProxy" where property("Location") as? String == "External":
+                if let av = IOAVServiceCreateWithService(kCFAllocatorDefault, entry)?.takeRetainedValue() {
+                    result.append((DDC(av), attributes))
+                }
+            default: break
+            }
         }
         return result
+    }
+
+    // How well a service's ProductAttributes fit a CoreGraphics display; 0 means it's not that monitor.
+    static func matchScore(_ attributes: [String: Any], vendor: UInt32, model: UInt32, serial: UInt32, name: String?) -> Int {
+        guard attributes["LegacyManufacturerID"] as? Int == Int(vendor), attributes["ProductID"] as? Int == Int(model) else { return 0 }
+        var score = 1
+        if serial != 0, attributes["SerialNumber"] as? Int == Int(serial) { score += 2 }
+        if let name, attributes["ProductName"] as? String == name { score += 1 }
+        return score
     }
 
     private func write(_ payload: [UInt8]) -> Bool {
