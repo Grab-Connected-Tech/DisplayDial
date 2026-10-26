@@ -18,6 +18,18 @@ assert(DDC.matchScore(dellA, vendor: 7789, model: 41586, serial: 809848642, name
 assert(DDC.matchScore([:], vendor: 4268, model: 41586, serial: 0, name: nil) == 0)
 print("Display matching OK")
 
+// Key steps: 16 presses cover 0...max exactly, every press moves, and the ends clamp.
+for (max, steps) in [(100, 16), (100, 64), (10, 16), (255, 16)] {
+    var v = 0, seen = [0]
+    for _ in 0..<steps { v = DDC.step(v, max: max, steps: steps, up: true); seen.append(v) }
+    assert(v == max && (max < steps || zip(seen, seen.dropFirst()).allSatisfy { $0 < $1 }), "up \(max)/\(steps): \(seen)")
+    for _ in 0..<steps { v = DDC.step(v, max: max, steps: steps, up: false) }
+    assert(v == 0, "down \(max)/\(steps) ended at \(v)")
+}
+assert(DDC.step(100, max: 100, steps: 16, up: true) == 100 && DDC.step(0, max: 100, steps: 16, up: false) == 0)
+assert(DDC.step(47, max: 100, steps: 16, up: true) == 56 && DDC.step(47, max: 100, steps: 16, up: false) == 44)
+print("Key steps OK")
+
 // Hardware: round-trip a DDC write on volume (±1, then restored).
 guard let (d, attributes) = DDC.externalDisplays().first, let orig = d.read(.volume)?.current else { fatalError("no DDC display / read failed") }
 var ids = [CGDirectDisplayID](repeating: 0, count: 16), count: UInt32 = 0

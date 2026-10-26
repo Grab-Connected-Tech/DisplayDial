@@ -22,6 +22,10 @@ final class DDC: @unchecked Sendable {
     private let queue = DispatchQueue(label: "ddc")
     private let lock = NSLock()
     private var pending: [VCP: Int] = [:]
+    private var failures = 0
+    // Keyboard keys go back to macOS while a monitor keeps failing (asleep, input switched away).
+    var unreliable: Bool { lock.withLock { failures >= 3 } }
+    private func record(_ ok: Bool) { lock.withLock { failures = ok ? 0 : failures + 1 } }
 
     private init(_ service: CFTypeRef) { self.service = service }
 
@@ -80,8 +84,10 @@ final class DDC: @unchecked Sendable {
                 guard IOAVServiceReadI2C(service, 0x37, 0x51, &reply, UInt32(reply.count)) == kIOReturnSuccess,
                       reply[2] == 0x02, reply[3] == 0x00, reply[4] == code.rawValue,
                       reply[..<10].reduce(0x50, ^) == reply[10] else { usleep(20_000); continue }
+                record(true)
                 return (Int(reply[8]) << 8 | Int(reply[9]), Int(reply[6]) << 8 | Int(reply[7]))
             }
+            record(false)
             return nil
         }
     }
@@ -134,6 +140,16 @@ final class DDC: @unchecked Sendable {
         return result
     }
 
+    // One brightness or volume key press, snapped to a grid of `steps` like macOS (16, or 64 with Shift+Option),
+    // so 16 presses go exactly from 0 to max even when max doesn't divide by 16.
+    static func step(_ value: Int, max: Int, steps: Int, up: Bool) -> Int {
+        let max = Swift.max(max, 1), scale = Double(steps) / Double(max)
+        let position = (Double(value) * scale).rounded() + (up ? 1 : -1)
+        var next = Int((position / scale).rounded())
+        if next == value { next += up ? 1 : -1 }
+        return Swift.min(Swift.max(next, 0), max)
+    }
+
     // MCCS 0x08 "restore factory colour defaults": write-only, any non-zero value triggers it.
     func restoreFactoryColor() {
         queue.async { [self] in _ = write([0x03, 0x08, 0x00, 0x01]) }
@@ -147,10 +163,12 @@ final class DDC: @unchecked Sendable {
             lock.lock(); let latest = pending.removeValue(forKey: code); lock.unlock()
             guard let latest else { return }
             // Monitors silently drop the odd DDC write; a second copy is cheap insurance.
+            var ok = false
             for _ in 0..<2 {
-                _ = write([0x03, code.rawValue, UInt8(latest >> 8 & 0xFF), UInt8(latest & 0xFF)])
+                ok = write([0x03, code.rawValue, UInt8(latest >> 8 & 0xFF), UInt8(latest & 0xFF)]) || ok
                 usleep(15_000)
             }
+            record(ok)
         }
     }
 }

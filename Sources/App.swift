@@ -15,7 +15,7 @@ struct DisplayDialApp: App {
         NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
             guard event.window?.className == "NSStatusBarWindow", let view = event.window?.contentView else { return event }
             let menu = NSMenu()
-            menu.addItem(withTitle: "Settings…", action: #selector(SettingsWindow.show), keyEquivalent: "").target = settings
+            menu.addItem(withTitle: "Settings…", action: #selector(SettingsWindow.open), keyEquivalent: "").target = settings
             menu.addItem(withTitle: "About DisplayDial", action: #selector(SettingsWindow.about), keyEquivalent: "").target = settings
             menu.addItem(.separator())
             menu.addItem(withTitle: "Quit DisplayDial", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "").target = NSApp
@@ -77,8 +77,8 @@ final class Displays {
             // A freshly plugged monitor's DDC service can register a moment after the screen appears.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 guard let self else { return }
-                rescan()
-                monitors.filter { $0.responded == nil || $0 === selected }.forEach { $0.refresh() }
+                self.rescan()
+                self.monitors.filter { $0.responded == nil || $0 === self.selected }.forEach { $0.refresh() }
             }
         }
     }

@@ -55,15 +55,16 @@ DisplayDial is made and maintained by **[Grab Connected Tech](https://www.grabia
 | Restore factory colours | Resets the colour preset and RGB to the monitor's factory defaults. Click twice to confirm. | `0x08` |
 | HDR | Shows whether the monitor supports HDR and whether it's on, with a switch to turn it on or off | (macOS, not DDC) |
 | My profiles | Save the current picture settings under a name and apply them in one click | (stored in the app) |
+| Keyboard keys | Optional: your Mac's brightness, volume and mute keys change the monitor, with an on-screen indicator | `0x10`, `0x62` |
 
 Also:
 
 - **Adapts to your monitor.** DisplayDial reads the monitor's capabilities and shows only the controls, inputs, modes and presets it supports.
-- **Lives in the menu bar.** It has no Dock icon and no windows to manage.
+- **Lives in the menu bar.** It has no Dock icon. Settings open from the gear button, ⌘, or by right-clicking the menu bar icon.
 - **Re-reads the monitor each time you open it**, so changes made with the monitor's own buttons show up.
 - **Smooth slider dragging.** Only the latest value is sent to the monitor, so it never falls behind.
 - **HDR status and switch.** The HDR row shows *On*, *Off* or *Not supported*. When HDR is on, it reminds you that the monitor locks brightness and contrast.
-- **Launch at login** toggle.
+- **Launch at login**, in Settings.
 - **Multiple monitors.** With more than one external monitor, a picker at the top of the panel switches between them, so the panel stays the same size. Each monitor keeps its own HDR switch and saved profiles, even two of the same model.
 - **Plug and unplug freely.** Monitors connected or reconnected while the app is running show up automatically.
 
@@ -102,7 +103,7 @@ The only requirement is the **Xcode Command Line Tools**; you don't need the ful
 | `./build.sh install` | Builds, copies it to `/Applications` and launches it |
 | `./build.sh screenshots` | Renders `docs/panel-light.png` and `docs/panel-dark.png` from your connected monitor, for the README |
 | `./build.sh dmg` | Builds and packages `build/DisplayDial.dmg` and `build/DisplayDial.zip` for sharing |
-| `./build.sh check` | Self-check: tests the capabilities parser, then changes the monitor's volume by one step, reads it back and restores it |
+| `./build.sh check` | Self-check: tests the capabilities parser, monitor matching and key steps, then changes the monitor's volume by one step, reads it back and restores it |
 
 ## How it works
 
@@ -117,6 +118,13 @@ When the panel first opens, DisplayDial asks the monitor for its **capabilities 
 **Telling monitors apart.** Every external monitor has its own DDC service in macOS's I/O Registry, listed just after the display hardware entry that carries the monitor's vendor ID, product ID, serial number and name. DisplayDial pairs each service with the right screen by comparing those values with what macOS reports for each display, so controls never end up on the wrong monitor. Saved profiles are stored under the monitor's vendor, model and serial number, so two identical monitors each keep their own. The list is rebuilt whenever the panel opens or a monitor is connected or removed.
 
 Each write is sent twice, because monitors occasionally drop a DDC command. Reads are retried up to four times, and each reply's checksum is checked before it's used.
+
+**Keyboard keys.** Turned on in Settings, DisplayDial installs an event tap for **system-defined events only**: the media keys for brightness, volume and mute. It never asks for key-down events, so it can't see anything you type, and it doesn't log key presses. macOS calls this Accessibility access. For each press it decides in a few milliseconds whether it can act:
+
+- **Brightness keys** go to the external monitor under the pointer (or the one with the active window, or all of them, as chosen in Settings). On the built-in display, an Apple display or a monitor without DDC, the key passes to macOS as before.
+- **Volume and mute keys** go to a monitor only when macOS is playing sound through its speakers or headphone jack. macOS can't change the volume of DisplayPort or HDMI audio on its own. With AirPods, Mac speakers or any other output, the key passes to macOS.
+
+If a monitor fails three DDC commands in a row, for example because it's asleep, its keys go back to macOS until it answers again. The indicator is macOS's own on macOS 14 and 15 (from the private `OSD.framework`, looked up at runtime) and a look-alike on macOS 26 and later.
 
 ## Troubleshooting
 
@@ -152,6 +160,12 @@ macOS doesn't see an external monitor. Check the cable, and that the monitor is 
 
 That's expected. Switching the monitor to HDMI shows the other device, and the Mac can't switch it back because its video link is no longer active. Use the monitor's buttons to choose USB-C again.
 
+### The brightness or volume keys don't change the monitor
+
+Open Settings (right-click the menu bar icon). The row under **Control external monitors with keyboard keys** says *Ready* or *Needs Accessibility access*; a dot on the menu bar icon means the same. macOS can drop the permission after an update, so if it's missing, click **Open System Settings** and switch DisplayDial on again under **Privacy & Security › Accessibility**.
+
+Volume keys only change the monitor when the monitor's speakers are the sound output in **System Settings › Sound**. If HDR is on, the brightness keys show a lock instead, because the monitor locks brightness in HDR.
+
 ### Run the self-check
 
 ```bash
@@ -168,7 +182,7 @@ Install DisplayDial, click the ☀️ icon in the menu bar and drag the **Bright
 
 ### Can I control my monitor's speaker volume from macOS?
 
-Yes. macOS's volume keys don't control speakers built into a USB-C or DisplayPort monitor, but DisplayDial's **Volume** slider sets the monitor's own volume over DDC/CI. Click the speaker icon to mute.
+Yes. macOS's volume keys don't control speakers built into a USB-C or DisplayPort monitor, but DisplayDial's **Volume** slider sets the monitor's own volume over DDC/CI. Click the speaker icon to mute. Turn on **Control external monitors with keyboard keys** in Settings and the Mac's volume and mute keys do the same whenever sound is playing through the monitor.
 
 ### Can I switch my monitor's input from my Mac?
 
@@ -222,7 +236,7 @@ On Apple Silicon, DDC/CI is only reachable through private IOKit APIs, and the A
 
 ### How is it different from MonitorControl, Lunar or BetterDisplay?
 
-Those are full-featured, mature apps. DisplayDial does only hardware monitor controls in a single menu bar panel: two Swift files, no dependencies and under 300 KB. Choose DisplayDial if you want something small you can read end to end. Choose the others for keyboard brightness keys, automatic adjustment or virtual displays.
+Those are full-featured, mature apps. DisplayDial does only hardware monitor controls in a single menu bar panel: a few Swift files, no dependencies and under 300 KB, plus optional brightness and volume keys that only listen for media keys, never typing. Choose DisplayDial if you want something small you can read end to end. Choose the others for custom shortcuts, automatic adjustment or virtual displays.
 
 ### Does DisplayDial work with multiple monitors?
 
@@ -232,7 +246,7 @@ So far DisplayDial has been tested on real hardware with one external monitor. R
 
 ### Does DisplayDial collect any data?
 
-No. It has no network access, analytics or accounts. It only talks to your monitor.
+No. It has no analytics or accounts, and it makes no network requests except when you click **Check for Updates** in Settings. It only talks to your monitor. The optional keyboard feature listens only for the brightness, volume and mute keys, never anything you type.
 
 ### Who makes DisplayDial?
 
@@ -245,6 +259,8 @@ DisplayDial/
 ├── Sources/
 │   ├── App.swift          # SwiftUI menu bar app and panel UI
 │   ├── DDC.swift          # DDC/CI over IOAVService: finding monitors, reading and writing VCP codes
+│   ├── Keys.swift         # Brightness, volume and mute keys: event tap, routing and on-screen indicator
+│   ├── Settings.swift     # Settings window
 │   └── Screenshots.swift  # README screenshot renderer, only built by ./build.sh screenshots
 ├── Tests/
 │   └── main.swift         # Self-check: capabilities parser + hardware round-trip (./build.sh check)

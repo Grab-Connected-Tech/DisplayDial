@@ -22,7 +22,8 @@ enum Screenshots {
 
     private static func render(_ displays: Displays, _ look: NSAppearance.Name, to path: String) {
         let appearance = NSAppearance(named: look)!
-        let host = NSHostingView(rootView: Panel(displays: displays).background(Color(nsColor: .windowBackgroundColor))
+        let keys = Keys(displays: displays)
+        let host = NSHostingView(rootView: Panel(displays: displays, keys: keys, settings: SettingsWindow(keys: keys)).background(Color(nsColor: .windowBackgroundColor))
             .environment(\.controlActiveState, .key))
         host.appearance = appearance
         host.frame.size = host.fittingSize
