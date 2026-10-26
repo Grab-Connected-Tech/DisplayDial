@@ -25,6 +25,7 @@ cat > $APP/Contents/Info.plist <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSHumanReadableCopyright</key><string>© 2026 Grab Connected Tech LLC. grabians.com</string>
 </dict></plist>
 PLIST
 codesign --force -s - $APP

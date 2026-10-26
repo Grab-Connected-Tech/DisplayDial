@@ -1,3 +1,5 @@
+// DisplayDial by Grab Connected Tech, https://www.grabians.com
+
 import SwiftUI
 import ServiceManagement
 
@@ -220,6 +222,13 @@ struct Panel: View {
                     .keyboardShortcut("q")
             }
             .font(.callout)
+            VStack(spacing: 2) {
+                Text("Made with ♥ by Grab Connected Tech · [grabians.com](https://www.grabians.com/?utm_source=displaydial&utm_medium=app)")
+                Text("© 2026 Grab Connected Tech LLC · [MIT License](https://github.com/Grab-Connected-Tech/DisplayDial/blob/main/LICENSE)")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
         }
         .padding(16)
         .frame(width: 320)

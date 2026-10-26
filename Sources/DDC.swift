@@ -1,3 +1,5 @@
+// DisplayDial by Grab Connected Tech, https://www.grabians.com
+
 import Foundation
 import IOKit
 

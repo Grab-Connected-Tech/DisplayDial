@@ -4,6 +4,8 @@
 
 It was built for a **Dell S2725QC connected over USB-C to an Apple Silicon Mac**. It should work with most DDC/CI-capable monitors from Dell, LG, Samsung, BenQ, ASUS and others.
 
+DisplayDial is made and maintained by **[Grab Connected Tech](https://www.grabians.com/?utm_source=github&utm_medium=readme&utm_campaign=displaydial)**, a software development company founded by Abhilash Reddy and Greg Krabbenhoft. We build custom web and mobile apps for startups and small to mid-sized businesses. We made this one for our own monitor and decided to give it away.
+
 ---
 
 ## Contents
@@ -17,6 +19,8 @@ It was built for a **Dell S2725QC connected over USB-C to an Apple Silicon Mac**
 - [FAQ](#faq)
 - [Project structure](#project-structure)
 - [Contributing](#contributing)
+- [License](#license)
+- [About Grab Connected Tech](#about-grab-connected-tech)
 
 ---
 
@@ -213,6 +217,10 @@ So far DisplayDial has been tested on real hardware with one external monitor. R
 
 No. It has no network access, analytics or accounts. It only talks to your monitor.
 
+### Who makes DisplayDial?
+
+DisplayDial is made by [Grab Connected Tech](https://www.grabians.com/?utm_source=github&utm_medium=readme&utm_campaign=displaydial), a software development company founded by Abhilash Reddy and Greg Krabbenhoft. Grab Connected Tech builds custom web and mobile apps and provides DevOps, application maintenance and IT consulting for startups and small to mid-sized businesses. See [About Grab Connected Tech](#about-grab-connected-tech).
+
 ## Project structure
 
 ```
@@ -234,4 +242,18 @@ Issues and pull requests are welcome. These are especially useful:
 - **Intel Mac support.**
 
 Please run `./build.sh check` with your monitor connected before opening a pull request that touches `DDC.swift`.
+
+## License
+
+DisplayDial is released under the [MIT License](LICENSE). © 2026 Grab Connected Tech LLC.
+
+## About Grab Connected Tech
+
+DisplayDial is built and maintained by **Grab Connected Tech**, a software development company founded by **Abhilash Reddy** and **Greg Krabbenhoft**. We operate in the US as Grab Connected Tech LLC and in India as Grabians Connected LLP.
+
+We build custom software for startups and small to mid-sized businesses: web apps, mobile apps, internal tools, DevOps and cloud setup, and ongoing maintenance and support for software that's already in production. Most of our client work is in healthcare, finance, retail and logistics.
+
+DisplayDial is a good sample of how we work. It's small and has no dependencies. Every reply from the monitor is checksummed before it's trusted. It also handles the awkward cases, like monitors that drop commands, two identical screens on one Mac and cables that don't carry DDC, instead of ignoring them. We bring the same habits to client projects.
+
+If you have something that needs building, or an app that needs someone to look after it, talk to us at **[grabians.com](https://www.grabians.com/?utm_source=github&utm_medium=readme&utm_campaign=displaydial)**.
 
