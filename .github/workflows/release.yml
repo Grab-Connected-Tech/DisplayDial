@@ -1,0 +1,29 @@
+# Push a version tag (git tag v1.2.3 && git push origin v1.2.3) to build and publish a release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # build.sh reads the version tag and commit count
+
+      - name: Build DMG and zip
+        run: ./build.sh dmg
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" build/DisplayDial.dmg build/DisplayDial.zip \
+            --title "DisplayDial ${GITHUB_REF_NAME#v}" \
+            --notes-file .github/release-notes.md \
+            --generate-notes

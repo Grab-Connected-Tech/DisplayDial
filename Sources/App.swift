@@ -229,6 +229,7 @@ struct Panel: View {
             VStack(spacing: 2) {
                 Text("Made with ♥ by Grab Connected Tech · [grabians.com](https://www.grabians.com/?utm_source=displaydial&utm_medium=app)")
                 Text("© 2026 Grab Connected Tech LLC · [MIT License](https://github.com/Grab-Connected-Tech/DisplayDial/blob/main/LICENSE)")
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") · [Releases](https://github.com/Grab-Connected-Tech/DisplayDial/releases)")
             }
             .font(.caption)
             .foregroundStyle(.secondary)

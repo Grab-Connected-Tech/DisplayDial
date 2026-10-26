@@ -3,7 +3,7 @@
 #        ./build.sh install    -> also copies it to /Applications and launches it
 #        ./build.sh check      -> hardware self-check (DDC write round-trip)
 #        ./build.sh screenshots -> renders docs/panel-{light,dark}.png from the live monitor
-#        ./build.sh dmg        -> also packages build/DisplayDial.dmg for sharing
+#        ./build.sh dmg        -> also packages build/DisplayDial.dmg and .zip for sharing
 set -e
 cd "${0:a:h}"
 if [[ $1 == check ]]; then
@@ -17,6 +17,10 @@ if [[ $1 == screenshots ]]; then
   exec build/screenshots
 fi
 APP=build/DisplayDial.app
+# Version comes from the latest vX.Y.Z git tag; the build number is the commit count.
+VERSION=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//')
+VERSION=${VERSION:-0.0.0}
+BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 rm -rf $APP && mkdir -p $APP/Contents/MacOS
 swiftc -O -target arm64-apple-macos14.0 Sources/*.swift -o $APP/Contents/MacOS/DisplayDial
 cat > $APP/Contents/Info.plist <<PLIST
@@ -27,15 +31,15 @@ cat > $APP/Contents/Info.plist <<PLIST
   <key>CFBundleIdentifier</key><string>local.displaydial</string>
   <key>CFBundleExecutable</key><string>DisplayDial</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>© 2026 Grab Connected Tech LLC. grabians.com</string>
 </dict></plist>
 PLIST
 codesign --force -s - $APP
-echo "Built $APP"
+echo "Built $APP $VERSION ($BUILD)"
 if [[ $1 == install ]]; then
   pkill -x DisplayDial || true
   rm -rf /Applications/DisplayDial.app && cp -R $APP /Applications/
@@ -43,9 +47,10 @@ if [[ $1 == install ]]; then
   echo "Installed to /Applications"
 fi
 if [[ $1 == dmg ]]; then
-  STAGE=build/dmg && rm -rf $STAGE build/DisplayDial.dmg && mkdir -p $STAGE
+  STAGE=build/dmg && rm -rf $STAGE build/DisplayDial.dmg build/DisplayDial.zip && mkdir -p $STAGE
   cp -R $APP $STAGE/ && ln -s /Applications $STAGE/Applications
   hdiutil create -volname DisplayDial -srcfolder $STAGE -format UDZO -quiet build/DisplayDial.dmg
   rm -rf $STAGE
-  echo "Created build/DisplayDial.dmg"
+  ditto -c -k --keepParent $APP build/DisplayDial.zip
+  echo "Created build/DisplayDial.dmg and build/DisplayDial.zip"
 fi
