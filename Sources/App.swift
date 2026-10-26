@@ -1,23 +1,58 @@
 // DisplayDial by Grab Connected Tech, https://www.grabians.com
 
 import SwiftUI
-import ServiceManagement
 
 @main
 struct DisplayDialApp: App {
-    @State private var displays = Displays()
+    @State private var displays: Displays
+    @State private var keys: Keys
+    private let settings: SettingsWindow
 
-    #if SCREENSHOTS
-    init() { DispatchQueue.main.async { Screenshots.run() } }
-    #endif
+    init() {
+        let displays = Displays(), keys = Keys(displays: displays), settings = SettingsWindow(keys: keys)
+        (_displays, _keys, self.settings) = (State(initialValue: displays), State(initialValue: keys), settings)
+        // MenuBarExtra has no right-click menu, so catch right-clicks on our status item's window.
+        NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
+            guard event.window?.className == "NSStatusBarWindow", let view = event.window?.contentView else { return event }
+            let menu = NSMenu()
+            menu.addItem(withTitle: "Settings…", action: #selector(SettingsWindow.show), keyEquivalent: "").target = settings
+            menu.addItem(withTitle: "About DisplayDial", action: #selector(SettingsWindow.about), keyEquivalent: "").target = settings
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Quit DisplayDial", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "").target = NSApp
+            NSMenu.popUpContextMenu(menu, with: event, for: view)
+            return nil
+        }
+        #if SCREENSHOTS
+        DispatchQueue.main.async { Screenshots.run() }
+        #endif
+    }
 
     var body: some Scene {
-        MenuBarExtra("DisplayDial", systemImage: "sun.max.fill") {
-            Panel(displays: displays)
+        MenuBarExtra {
+            Panel(displays: displays, keys: keys, settings: settings)
+        } label: {
+            if keys.needsAccess {
+                Image(nsImage: dottedIcon).accessibilityLabel("DisplayDial needs Accessibility access")
+            } else {
+                Image(nsImage: menuBarIcon).accessibilityLabel("DisplayDial")
+            }
         }
         .menuBarExtraStyle(.window)
     }
 }
+
+private let menuBarIcon = NSImage(named: "MenuBarIconTemplate") ?? NSImage(systemSymbolName: "sun.max.fill", accessibilityDescription: nil)!
+
+// Shown while the keyboard keys are on but macOS has dropped DisplayDial's Accessibility access.
+private let dottedIcon: NSImage = {
+    let icon = NSImage(size: menuBarIcon.size, flipped: false) { rect in
+        menuBarIcon.draw(in: rect)
+        NSBezierPath(ovalIn: NSRect(x: rect.maxX - 5, y: 0, width: 5, height: 5)).fill()
+        return true
+    }
+    icon.isTemplate = true
+    return icon
+}()
 
 struct Profile: Codable, Identifiable {
     var id = UUID()
@@ -25,7 +60,7 @@ struct Profile: Codable, Identifiable {
     var values: [VCP: Int]
 }
 
-private func screen(_ id: CGDirectDisplayID) -> NSScreen? {
+func screen(_ id: CGDirectDisplayID) -> NSScreen? {
     NSScreen.screens.first { $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID == id }
 }
 
@@ -34,6 +69,19 @@ final class Displays {
     var monitors: [Monitor] = []
     var selectedID: CGDirectDisplayID?
     var selected: Monitor? { monitors.first { $0.id == selectedID } ?? monitors.first }
+
+    init() {
+        rescan()
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.rescan()
+            // A freshly plugged monitor's DDC service can register a moment after the screen appears.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                guard let self else { return }
+                rescan()
+                monitors.filter { $0.responded == nil || $0 === selected }.forEach { $0.refresh() }
+            }
+        }
+    }
 
     // Rebuilt on every panel open and display change, so replugged monitors get fresh IOAVService
     // handles; a Monitor object (and its cached capabilities) survives while its display stays online.
@@ -89,15 +137,17 @@ final class Monitor: Identifiable {
     var hdr = false
     var hdrSupported = false
     // Vendor-model-serial stays the same across reconnects and tells identical models apart.
-    private let profilesKey: String
+    let key: String
+    private var profilesKey: String { "profiles.\(key)" }
     var profiles: [Profile] {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(profiles), forKey: profilesKey) }
     }
-    private var volumeBeforeMute = 30
+    var volumeBeforeMute = 30
 
     init(id: CGDirectDisplayID, legacyProfilesKey: String?) {
         self.id = id
-        profilesKey = "profiles.\(CGDisplayVendorNumber(id))-\(CGDisplayModelNumber(id))-\(CGDisplaySerialNumber(id))"
+        key = "\(CGDisplayVendorNumber(id))-\(CGDisplayModelNumber(id))-\(CGDisplaySerialNumber(id))"
+        let profilesKey = "profiles.\(key)"
         let defaults = UserDefaults.standard
         let data = defaults.data(forKey: profilesKey) ?? legacyProfilesKey.flatMap { defaults.data(forKey: $0) }
         profiles = data.flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
@@ -197,7 +247,10 @@ final class Monitor: Identifiable {
 
 struct Panel: View {
     let displays: Displays
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    let keys: Keys
+    let settings: SettingsWindow
+    @AppStorage("hint.opens") private var opens = 0
+    @AppStorage("hint.dismissed") private var hintDismissed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -213,14 +266,25 @@ struct Panel: View {
                 .labelsHidden()
             }
             if let monitor = displays.selected { MonitorSection(monitor: monitor).id(monitor.id) }
+            // Not on the first open, so the first look stays uncluttered.
+            if opens >= 2, !hintDismissed, !keys.enabled, displays.selected?.responded == true {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "keyboard").foregroundStyle(.secondary)
+                    Text("Use your keyboard's brightness and volume keys on this monitor?")
+                    Spacer(minLength: 0)
+                    Button("Set up") { settings.show(highlightKeys: true) }
+                        .buttonStyle(.link)
+                    Button { hintDismissed = true } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Dismiss")
+                }
+                .font(.callout)
+            }
             Divider()
             HStack {
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .toggleStyle(.checkbox)
-                    .onChange(of: launchAtLogin) { _, on in
-                        do { on ? try SMAppService.mainApp.register() : try SMAppService.mainApp.unregister() }
-                        catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
-                    }
+                Button { settings.show() } label: { Label("Settings…", systemImage: "gearshape") }
+                    .keyboardShortcut(",")
                 Spacer()
                 Button("Quit") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
@@ -237,13 +301,11 @@ struct Panel: View {
         }
         .padding(16)
         .frame(width: 320)
-        .onAppear { displays.rescan(); displays.selected?.refresh() }
-        .onChange(of: displays.selected?.id) { displays.selected?.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            displays.rescan()
-            // A freshly plugged monitor's DDC service can register a moment after the screen appears.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { displays.rescan(); displays.selected?.refresh() }
+        .onAppear {
+            displays.rescan(); displays.selected?.refresh()
+            if opens < 2 { opens += 1 }
         }
+        .onChange(of: displays.selected?.id) { displays.selected?.refresh() }
     }
 }
 

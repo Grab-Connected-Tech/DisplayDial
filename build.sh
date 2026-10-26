@@ -21,7 +21,8 @@ APP=build/DisplayDial.app
 VERSION=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//')
 VERSION=${VERSION:-0.0.0}
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
-rm -rf $APP && mkdir -p $APP/Contents/MacOS
+rm -rf $APP && mkdir -p $APP/Contents/{MacOS,Resources}
+cp Resources/AppIcon.icns Resources/MenuBarIconTemplate.pdf $APP/Contents/Resources/
 swiftc -O -target arm64-apple-macos14.0 Sources/*.swift -o $APP/Contents/MacOS/DisplayDial
 cat > $APP/Contents/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -30,6 +31,7 @@ cat > $APP/Contents/Info.plist <<PLIST
   <key>CFBundleName</key><string>DisplayDial</string>
   <key>CFBundleIdentifier</key><string>local.displaydial</string>
   <key>CFBundleExecutable</key><string>DisplayDial</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
