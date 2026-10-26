@@ -2,6 +2,13 @@
 
 **DisplayDial is a free, open-source macOS menu bar app that controls an external monitor's hardware settings (brightness, contrast, speaker volume, input source, picture modes, colour presets and RGB colour) directly from your Mac over DDC/CI.** It is native Swift/SwiftUI, has no dependencies, and the whole app is under 300 KB.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/panel-dark.png">
+    <img src="docs/panel-light.png" width="400" alt="DisplayDial menu bar panel controlling a Dell S2725QC: HDR switch, brightness, contrast and volume sliders, USB-C and HDMI input buttons, Standard, Movie and Game picture modes, 6500K colour preset, restore factory colours and saved profiles">
+  </picture>
+</p>
+
 It was built for a **Dell S2725QC connected over USB-C to an Apple Silicon Mac**. It should work with most DDC/CI-capable monitors from Dell, LG, Samsung, BenQ, ASUS and others.
 
 DisplayDial is made and maintained by **[Grab Connected Tech](https://www.grabians.com/?utm_source=github&utm_medium=readme&utm_campaign=displaydial)**, a software development company founded by Abhilash Reddy and Greg Krabbenhoft. We build custom web and mobile apps for startups and small to mid-sized businesses. We made this one for our own monitor and decided to give it away.
@@ -84,6 +91,7 @@ The only requirement is the **Xcode Command Line Tools**; you don't need the ful
 |---|---|
 | `./build.sh` | Builds `build/DisplayDial.app` |
 | `./build.sh install` | Builds, copies it to `/Applications` and launches it |
+| `./build.sh screenshots` | Renders `docs/panel-light.png` and `docs/panel-dark.png` from your connected monitor, for the README |
 | `./build.sh dmg` | Builds and packages `build/DisplayDial.dmg` for sharing |
 | `./build.sh check` | Self-check: tests the capabilities parser, then changes the monitor's volume by one step, reads it back and restores it |
 
@@ -226,11 +234,13 @@ DisplayDial is made by [Grab Connected Tech](https://www.grabians.com/?utm_sourc
 ```
 DisplayDial/
 ├── Sources/
-│   ├── DDC.swift     # DDC/CI over IOAVService: finding monitors, reading and writing VCP codes
-│   └── App.swift     # SwiftUI menu bar app and panel UI
+│   ├── App.swift          # SwiftUI menu bar app and panel UI
+│   ├── DDC.swift          # DDC/CI over IOAVService: finding monitors, reading and writing VCP codes
+│   └── Screenshots.swift  # README screenshot renderer, only built by ./build.sh screenshots
 ├── Tests/
-│   └── main.swift    # Self-check: capabilities parser + hardware round-trip (./build.sh check)
-└── build.sh          # Build, install, DMG and self-check commands
+│   └── main.swift         # Self-check: capabilities parser + hardware round-trip (./build.sh check)
+├── docs/                  # README screenshots
+└── build.sh               # Build, install, DMG, screenshot and self-check commands
 ```
 
 ## Contributing

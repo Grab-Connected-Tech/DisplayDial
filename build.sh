@@ -2,6 +2,7 @@
 # Usage: ./build.sh            -> build/DisplayDial.app
 #        ./build.sh install    -> also copies it to /Applications and launches it
 #        ./build.sh check      -> hardware self-check (DDC write round-trip)
+#        ./build.sh screenshots -> renders docs/panel-{light,dark}.png from the live monitor
 #        ./build.sh dmg        -> also packages build/DisplayDial.dmg for sharing
 set -e
 cd "${0:a:h}"
@@ -9,6 +10,11 @@ if [[ $1 == check ]]; then
   mkdir -p build
   swiftc Sources/DDC.swift Tests/main.swift -o build/check
   exec build/check
+fi
+if [[ $1 == screenshots ]]; then
+  mkdir -p build
+  swiftc -O -D SCREENSHOTS -target arm64-apple-macos14.0 Sources/*.swift -o build/screenshots
+  exec build/screenshots
 fi
 APP=build/DisplayDial.app
 rm -rf $APP && mkdir -p $APP/Contents/MacOS

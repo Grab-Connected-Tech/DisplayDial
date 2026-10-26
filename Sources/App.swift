@@ -7,6 +7,10 @@ import ServiceManagement
 struct DisplayDialApp: App {
     @State private var displays = Displays()
 
+    #if SCREENSHOTS
+    init() { DispatchQueue.main.async { Screenshots.run() } }
+    #endif
+
     var body: some Scene {
         MenuBarExtra("DisplayDial", systemImage: "sun.max.fill") {
             Panel(displays: displays)
