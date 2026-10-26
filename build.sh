@@ -11,15 +11,18 @@ if [[ $1 == check ]]; then
   swiftc Sources/DDC.swift Tests/main.swift -o build/check
   exec build/check
 fi
-if [[ $1 == screenshots ]]; then
-  mkdir -p build
-  swiftc -O -D SCREENSHOTS -target arm64-apple-macos14.0 Sources/*.swift -o build/screenshots
-  exec build/screenshots
-fi
-APP=build/DisplayDial.app
 # Version comes from the latest vX.Y.Z git tag; the build number is the commit count.
 VERSION=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null | sed 's/^v//')
 VERSION=${VERSION:-0.0.0}
+if [[ $1 == screenshots ]]; then
+  mkdir -p build
+  # A bare executable has no bundle, so embed an Info.plist for the panel's version label.
+  printf '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>%s</string></dict></plist>' $VERSION > build/screenshots-Info.plist
+  swiftc -O -D SCREENSHOTS -target arm64-apple-macos14.0 Sources/*.swift -o build/screenshots \
+    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker build/screenshots-Info.plist
+  exec build/screenshots
+fi
+APP=build/DisplayDial.app
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 rm -rf $APP && mkdir -p $APP/Contents/{MacOS,Resources}
 cp Resources/AppIcon.icns Resources/MenuBarIconTemplate.pdf $APP/Contents/Resources/

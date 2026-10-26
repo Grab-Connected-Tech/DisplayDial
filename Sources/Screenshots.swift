@@ -5,6 +5,9 @@ import SwiftUI
 
 enum Screenshots {
     static func run() {
+        // Every render counts as a panel open, which would show the one-time keyboard hint in
+        // only some renders. Registered defaults aren't persisted.
+        UserDefaults.standard.register(defaults: ["hint.dismissed": true])
         let displays = Displays()
         displays.rescan()
         displays.selected?.refresh()
